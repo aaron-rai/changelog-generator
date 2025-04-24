@@ -1,0 +1,53 @@
+name: 'PR Changelog Generator'
+description: 'Automatically generate changelogs from PR descriptions'
+author: 'Your Name'
+
+inputs:
+  token:
+    description: 'GitHub token'
+    required: true
+    default: ${{ github.token }}
+  pr_number:
+    description: 'Pull request number'
+    required: true
+  repo:
+    description: 'Repository name (e.g. owner/repo)'
+    required: true
+    default: ${{ github.repository }}
+  changelog_dir:
+    description: 'Directory to store changelog files'
+    required: false
+    default: 'changelog'
+  client_subdirectory:
+    description: 'Subdirectory for client-facing changelogs'
+    required: false
+    default: 'client'
+  internal_subdirectory:
+    description: 'Subdirectory for internal changelogs'
+    required: false
+    default: 'internal'
+  commit_changes:
+    description: 'Whether to commit changes to the repo'
+    required: false
+    default: 'true'
+  commit_message:
+    description: 'Commit message for changelog updates'
+    required: false
+    default: 'Update changelog for PR #{pr_number}'
+
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
+  env:
+    GITHUB_TOKEN: ${{ inputs.token }}
+    PR_NUMBER: ${{ inputs.pr_number }}
+    REPO_NAME: ${{ inputs.repo }}
+    CHANGELOG_DIR: ${{ inputs.changelog_dir }}
+    CLIENT_SUBDIR: ${{ inputs.client_subdirectory }}
+    INTERNAL_SUBDIR: ${{ inputs.internal_subdirectory }}
+    COMMIT_CHANGES: ${{ inputs.commit_changes }}
+    COMMIT_MESSAGE: ${{ inputs.commit_message }}
+
+branding:
+  icon: 'book-open'
+  color: 'blue'

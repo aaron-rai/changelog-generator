@@ -1,0 +1,28 @@
+name: Generate Changelog
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  generate-changelog:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      
+      # Use the changelog generator action
+      - name: Generate Changelog
+        uses: aaron-rai/changelog-generator@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          pr_number: ${{ github.event.pull_request.number }}
+          repo: ${{ github.repository }}
+          # Optional: Customize directories
+          # changelog_dir: 'docs/changelog'
+          # client_subdirectory: 'user'
+          # internal_subdirectory: 'dev'
