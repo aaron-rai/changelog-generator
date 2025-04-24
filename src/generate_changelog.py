@@ -191,69 +191,68 @@ class ChangelogGenerator:
 		return file_path
 
 	def commit_changes(self, files_to_commit):
-		"""Commit changes to the repository using GitHub CLI."""
+		"""Commit changes to the repository using Git commands."""
 		if not self.should_commit_changes or not files_to_commit:
 			logger.info("Skipping commit: either commit_changes is disabled or no files to commit")
 			return
 
 		try:
-			repo_name = os.environ.get("GITHUB_REPOSITORY", self.repo_name)
-			branch = os.environ.get("GITHUB_REF_NAME", "main")
 			commit_message = self.commit_message_template.replace("{pr_number}", self.pr_number)
-
-			logger.info(f"Attempting to commit changes to {repo_name} on branch {branch}")
+			logger.info(f"Preparing to commit with message: {commit_message}")
 
 			files_list = []
 			for file_path in files_to_commit:
 				if isinstance(file_path, Path):
 					file_path = str(file_path)
 
-				if file_path.startswith('/'):
-					file_path = file_path[1:]
-
 				files_list.append(file_path)
 
 			logger.info(f"Files to commit: {files_list}")
 
-			#NOTE: Use GitHub CLI to commit changes
-			gh_auth_cmd = f"gh auth setup-git"
-			logger.info(f"Running: {gh_auth_cmd}")
-			os.system(gh_auth_cmd)
+			#NOTE: Configure Git for GitHub Actions environment
+			commands = [
+				'git config --global user.email "github-actions[bot]@users.noreply.github.com"',
+				'git config --global user.name "github-actions[bot]"',
+				'git config --global --add safe.directory /github/workspace'
+			]
 
-			#NOTE: Add files
-			for file in files_list:
-				add_cmd = f"gh api --method PUT /repos/{repo_name}/contents/{file} "
-				add_cmd += f"-f message='{commit_message}' "
-				add_cmd += f"-f branch={branch} "
+			for cmd in commands:
+				logger.info(f"Running: {cmd}")
+				exit_code = os.system(cmd)
+				if exit_code != 0:
+					logger.warning(f"Command exited with code {exit_code}: {cmd}")
 
-				#NOTE Read file content and encode as base64
-				with open(file, 'rb') as f:
-					content = f.read()
-				encoded_content = base64.b64encode(content).decode('utf-8')
+			for file_path in files_list:
+				add_cmd = f'git add "{file_path}"'
+				logger.info(f"Running: {add_cmd}")
+				os.system(add_cmd)
 
-				add_cmd += f"-f content='{encoded_content}'"
+			status_cmd = 'git status --porcelain'
+			import subprocess
+			status_output = subprocess.check_output(status_cmd, shell=True).decode('utf-8').strip()
 
-				#NOTE: Check if file already exists (to handle updates vs new files)
-				headers = {"Authorization": f"Bearer {os.environ.get('GITHUB_TOKEN')}"}
-				file_exists_url = f"https://api.github.com/repos/{repo_name}/contents/{file}?ref={branch}"
-				response = requests.get(file_exists_url, headers=headers)
+			if status_output:
+				commit_cmd = f'git commit -m "{commit_message}"'
+				logger.info(f"Running: {commit_cmd}")
+				exit_code = os.system(commit_cmd)
 
-				if response.status_code == 200:
-					file_sha = response.json()["sha"]
-					add_cmd += f" -f sha='{file_sha}'"
-
-				logger.info(f"Committing file: {file}")
-				result = os.system(add_cmd)
-
-				if result != 0:
-					logger.warning(f"Failed to commit file {file}, exit code: {result}")
+				if exit_code != 0:
+					logger.warning(f"Git commit exited with code {exit_code}")
 				else:
-					logger.info(f"Successfully committed {file}")
+					push_cmd = 'git push'
+					logger.info(f"Running: {push_cmd}")
+					exit_code = os.system(push_cmd)
 
-			logger.info("Commit process completed")
+					if exit_code != 0:
+						logger.warning(f"Git push exited with code {exit_code}")
+					else:
+						logger.info("Successfully committed and pushed changes")
+			else:
+				logger.info("No changes detected to commit")
 
 		except Exception as e:
 			logger.error(f"Error committing changes: {e}")
+			import traceback
 			logger.error(traceback.format_exc())
 
 	def run(self):
