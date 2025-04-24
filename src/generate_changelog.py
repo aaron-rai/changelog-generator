@@ -6,9 +6,12 @@ This script extracts changelog information from PR descriptions based on a templ
 and updates the appropriate changelog files organized by version.
 """
 
+import base64
 import os
 import re
+import requests
 import sys
+import traceback
 import logging
 from pathlib import Path
 from datetime import datetime
@@ -188,31 +191,70 @@ class ChangelogGenerator:
 		return file_path
 
 	def commit_changes(self, files_to_commit):
-		"""Commit changes to the repository."""
+		"""Commit changes to the repository using GitHub CLI."""
 		if not self.should_commit_changes or not files_to_commit:
+			logger.info("Skipping commit: either commit_changes is disabled or no files to commit")
 			return
 
 		try:
+			repo_name = os.environ.get("GITHUB_REPOSITORY", self.repo_name)
+			branch = os.environ.get("GITHUB_REF_NAME", "main")
 			commit_message = self.commit_message_template.replace("{pr_number}", self.pr_number)
 
-			#NOTE: Configure git
-			os.system('git config --local user.email "github-actions[bot]@users.noreply.github.com"')
-			os.system('git config --local user.name "github-actions[bot]"')
+			logger.info(f"Attempting to commit changes to {repo_name} on branch {branch}")
 
+			files_list = []
 			for file_path in files_to_commit:
-				os.system(f'git add "{file_path}"')
+				if isinstance(file_path, Path):
+					file_path = str(file_path)
 
-			#NOTE: Commit and push if there are changes
-			result = os.system('git diff --staged --quiet')
-			if result != 0:
-				os.system(f'git commit -m "{commit_message}"')
-				os.system('git push')
-				logger.info("Changes committed and pushed to repository")
-			else:
-				logger.info("No changes to commit")
+				if file_path.startswith('/'):
+					file_path = file_path[1:]
+
+				files_list.append(file_path)
+
+			logger.info(f"Files to commit: {files_list}")
+
+			#NOTE: Use GitHub CLI to commit changes
+			gh_auth_cmd = f"gh auth setup-git"
+			logger.info(f"Running: {gh_auth_cmd}")
+			os.system(gh_auth_cmd)
+
+			#NOTE: Add files
+			for file in files_list:
+				add_cmd = f"gh api --method PUT /repos/{repo_name}/contents/{file} "
+				add_cmd += f"-f message='{commit_message}' "
+				add_cmd += f"-f branch={branch} "
+
+				#NOTE Read file content and encode as base64
+				with open(file, 'rb') as f:
+					content = f.read()
+				encoded_content = base64.b64encode(content).decode('utf-8')
+
+				add_cmd += f"-f content='{encoded_content}'"
+
+				#NOTE: Check if file already exists (to handle updates vs new files)
+				headers = {"Authorization": f"Bearer {os.environ.get('GITHUB_TOKEN')}"}
+				file_exists_url = f"https://api.github.com/repos/{repo_name}/contents/{file}?ref={branch}"
+				response = requests.get(file_exists_url, headers=headers)
+
+				if response.status_code == 200:
+					file_sha = response.json()["sha"]
+					add_cmd += f" -f sha='{file_sha}'"
+
+				logger.info(f"Committing file: {file}")
+				result = os.system(add_cmd)
+
+				if result != 0:
+					logger.warning(f"Failed to commit file {file}, exit code: {result}")
+				else:
+					logger.info(f"Successfully committed {file}")
+
+			logger.info("Commit process completed")
 
 		except Exception as e:
 			logger.error(f"Error committing changes: {e}")
+			logger.error(traceback.format_exc())
 
 	def run(self):
 		"""Main execution method."""
