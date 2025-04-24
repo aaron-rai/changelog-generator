@@ -29,7 +29,7 @@ class ChangelogGenerator:
 		self.changelog_dir = os.environ.get("CHANGELOG_DIR", "changelog")
 		self.client_subdir = os.environ.get("CLIENT_SUBDIR", "client")
 		self.internal_subdir = os.environ.get("INTERNAL_SUBDIR", "internal")
-		self.commit_changes = os.environ.get("COMMIT_CHANGES", "true").lower() == "true"
+		self.should_commit_changes = os.environ.get("COMMIT_CHANGES", "true").lower() == "true"
 		self.commit_message_template = os.environ.get("COMMIT_MESSAGE", "Update changelog for PR #{pr_number}")
 
 		self._validate_env()
@@ -189,7 +189,7 @@ class ChangelogGenerator:
 
 	def commit_changes(self, files_to_commit):
 		"""Commit changes to the repository."""
-		if not self.commit_changes or not files_to_commit:
+		if not self.should_commit_changes or not files_to_commit:
 			return
 
 		try:
@@ -254,7 +254,7 @@ class ChangelogGenerator:
 			logger.info("No internal changes found")
 
 		#NOTE: Commit changes if needed
-		if self.commit_changes:
+		if self.should_commit_changes:
 			self.commit_changes(updated_files)
 
 		logger.info("Changelog generation completed successfully")
