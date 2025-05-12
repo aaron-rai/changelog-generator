@@ -6,16 +6,15 @@ This script extracts changelog information from PR descriptions based on a templ
 and updates the appropriate changelog files organized by version.
 """
 
-import base64
+import logging
 import os
 import re
-import requests
+import subprocess
 import sys
 import traceback
-import logging
-from pathlib import Path
 from datetime import datetime
 from github import Github
+from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('changelog-generator')
@@ -34,6 +33,8 @@ class ChangelogGenerator:
 		self.internal_subdir = os.environ.get("INTERNAL_SUBDIR", "internal")
 		self.should_commit_changes = os.environ.get("COMMIT_CHANGES", "true").lower() == "true"
 		self.commit_message_template = os.environ.get("COMMIT_MESSAGE", "Update changelog for PR #{pr_number}")
+		self.unified_changelog = os.environ.get("UNIFIED_CHANGELOG", "false").lower() == "true"
+		self.unified_format = os.environ.get("UNIFIED_FORMAT", "client").lower()
 
 		self._validate_env()
 
@@ -55,9 +56,10 @@ class ChangelogGenerator:
 		changelog_dir = Path(self.changelog_dir)
 		changelog_dir.mkdir(exist_ok=True)
 
-		#NOTE: Create directories for different changelog types
-		(changelog_dir / self.client_subdir).mkdir(exist_ok=True)
-		(changelog_dir / self.internal_subdir).mkdir(exist_ok=True)
+		if not self.unified_changelog:
+			#NOTE: Create directories for different changelog types
+			(changelog_dir / self.client_subdir).mkdir(exist_ok=True)
+			(changelog_dir / self.internal_subdir).mkdir(exist_ok=True)
 
 		return changelog_dir
 
@@ -150,20 +152,26 @@ class ChangelogGenerator:
 	def update_changelog_file(self, changelog_dir, version, section_type, changes, pr_number, pr_title, related_issues=None):
 		"""Update the appropriate changelog file with new changes."""
 		#NOTE: Determine file path based on type and version
-		subdir = self.client_subdir if section_type == "client" else self.internal_subdir
-		file_path = changelog_dir / subdir / f"{version}.md"
+		if self.unified_changelog:
+			file_path = changelog_dir / f"{version}.md"
+		else:
+			subdir = self.client_subdir if section_type == "client" else self.internal_subdir
+			file_path = changelog_dir / subdir / f"{version}.md"
 
 		#NOTE: Create file with header if it doesn't exist
 		if not file_path.exists():
 			with open(file_path, "w") as f:
-				f.write(f"# {version} {section_type.capitalize()} Changelog\n\n")
+				if self.unified_changelog:
+					f.write(f"# {version} Changelog\n\n")
+				else:
+					f.write(f"# {version} {section_type.capitalize()} Changelog\n\n")
 			logger.info(f"Created new changelog file: {file_path}")
 
 		#NOTE: Read existing content
 		with open(file_path, "r") as f:
 			content = f.read()
 
-		today = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+		today = datetime.now().strftime("%Y-%m-%d")
 
 		changes_by_category = {}
 		for change in changes:
@@ -172,7 +180,14 @@ class ChangelogGenerator:
 				changes_by_category[category] = []
 			changes_by_category[category].append(change["text"])
 
-		new_content = content.rstrip() + f"\n\n## PR #{pr_number}: {pr_title} ({today})\n"
+		new_content = content.rstrip()
+
+		if section_type == "client":
+			date_header = f"## {today}"
+			if date_header not in content:
+				new_content += f"\n\n{date_header}\n"
+		else:
+			new_content += f"\n\n## PR #{pr_number}: {pr_title} ({today})\n"
 
 		if related_issues:
 			new_content += "\n**Related Issues:** "
@@ -180,14 +195,14 @@ class ChangelogGenerator:
 			new_content += "\n"
 
 		for category, items in changes_by_category.items():
-			new_content += f"\n### {category}\n"
+			new_content += f"\n### {category}\n\n"
 			for item in items:
 				new_content += f"- {item}\n"
 
 		with open(file_path, "w") as f:
 			f.write(new_content)
 
-		logger.info(f"Updated {section_type} changelog for {version}")
+		logger.info(f"Updated changelog for {version} using {section_type} format")
 		return file_path
 
 	def commit_changes(self, files_to_commit):
@@ -228,7 +243,6 @@ class ChangelogGenerator:
 				os.system(add_cmd)
 
 			status_cmd = 'git status --porcelain'
-			import subprocess
 			status_output = subprocess.check_output(status_cmd, shell=True).decode('utf-8').strip()
 
 			if status_output:
@@ -252,7 +266,6 @@ class ChangelogGenerator:
 
 		except Exception as e:
 			logger.error(f"Error committing changes: {e}")
-			import traceback
 			logger.error(traceback.format_exc())
 
 	def run(self):
@@ -277,22 +290,45 @@ class ChangelogGenerator:
 		#NOTE: Track files that were updated
 		updated_files = []
 
-		#NOTE: Update changelog files if there are changes
-		if client_changes:
-			file_path = self.update_changelog_file(
-				changelog_dir, version, "client", client_changes, self.pr_number, pr_title, related_issues
-			)
-			updated_files.append(file_path)
-		else:
-			logger.info("No client-facing changes found")
+		if self.unified_changelog:
+			#NOTE: Unified changelog approach
+			logger.info("Using unified changelog format")
 
-		if internal_changes:
-			file_path = self.update_changelog_file(
-				changelog_dir, version, "internal", internal_changes, self.pr_number, pr_title, related_issues
-			)
-			updated_files.append(file_path)
+			all_changes = []
+			if client_changes:
+				all_changes.extend(client_changes)
+			if internal_changes:
+				all_changes.extend(internal_changes)
+
+			if all_changes:
+				format_type = self.unified_format
+				if format_type not in ["client", "internal"]:
+					logger.warning(f"Unknown unified format '{format_type}', defaulting to 'client'")
+					format_type = "client"
+
+				file_path = self.update_changelog_file(
+					changelog_dir, version, format_type, all_changes, self.pr_number, pr_title, related_issues
+				)
+				updated_files.append(file_path)
+			else:
+				logger.info("No changes found to add to changelog")
 		else:
-			logger.info("No internal changes found")
+			#NOTE: Separate changelogs for client and internal changes
+			if client_changes:
+				file_path = self.update_changelog_file(
+					changelog_dir, version, "client", client_changes, self.pr_number, pr_title, related_issues
+				)
+				updated_files.append(file_path)
+			else:
+				logger.info("No client-facing changes found")
+
+			if internal_changes:
+				file_path = self.update_changelog_file(
+					changelog_dir, version, "internal", internal_changes, self.pr_number, pr_title, related_issues
+				)
+				updated_files.append(file_path)
+			else:
+				logger.info("No internal changes found")
 
 		#NOTE: Commit changes if needed
 		if self.should_commit_changes:

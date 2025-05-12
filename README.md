@@ -64,6 +64,10 @@ Create a workflow file in your repository at `.github/workflows/generate-changel
 ```yaml
 name: Generate Changelog
 
+permissions:
+  contents: write
+  pull-requests: read
+
 on:
   pull_request:
     types: [closed]
@@ -98,32 +102,68 @@ jobs:
 | `changelog_dir` | Directory to store changelog files | `changelog` |
 | `client_subdirectory` | Subdirectory for client-facing changelogs | `client` |
 | `internal_subdirectory` | Subdirectory for internal changelogs | `internal` |
+| `unified_changelog` | Use a single changelog instead of separate types | `false` |
+| `unified_format` | Format to use for unified changelog (`client` or `internal`) | `client` |
 | `commit_changes` | Whether to commit changes to the repo | `true` |
 | `commit_message` | Commit message for changelog updates | `Update changelog for PR #{pr_number}` |
 
 ## Output Format
 
-The action generates two types of changelog files:
+The action generates changelog files in one of two ways:
+
+### Option 1: Separate Changelogs (Default)
+
+When `unified_changelog` is set to `false`, it creates two types of changelog files:
 
 1. `${changelog_dir}/${client_subdirectory}/${version}.md` - Client-facing changes
 2. `${changelog_dir}/${internal_subdirectory}/${version}.md` - Internal technical changes
 
-Example output:
+Example client-facing output:
 
 ```markdown
-# v1.2.0 Client Changelog
+# v1.2.0
+
+## 2023-05-15
+
+### Added
+
+- Login and registration forms with email verification
+- Password reset functionality
+
+### Fixed
+
+- Account settings page not saving changes properly
+```
+
+Example internal output:
+
+```markdown
+# v1.2.0 Internal Changelog
 
 ## PR #123: Add user authentication features (2023-05-15)
 
 **Related Issues:** #100, #115, PROJ-456
 
 ### Added
-- Login and registration forms with email verification
-- Password reset functionality
+
+- Authentication service with JWT implementation
+- User repository module
 
 ### Fixed
-- Account settings page not saving changes properly
+
+- Race condition in concurrent user updates
 ```
+
+### Option 2: Unified Changelog
+
+When `unified_changelog` is set to `true`, it creates a single changelog file:
+
+`${changelog_dir}/${version}.md`
+
+The format depends on the `unified_format` setting:
+
+- With `unified_format: client` (default), it uses the simpler client-facing format
+- With `unified_format: internal`, it uses the more detailed format with PR information
 
 ## Development
 

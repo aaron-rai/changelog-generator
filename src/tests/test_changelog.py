@@ -119,12 +119,13 @@ def cleanup_test_environment(temp_dir, original_dir):
 def run_test():
 	"""Run the changelog generator test."""
 	#NOTE: Import the generator class
-	#NOTE: Adjust the import path based on your project structure
-	sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 	try:
+		project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+		sys.path.insert(0, project_root)
+
 		from src.generate_changelog import ChangelogGenerator
-	except ImportError:
-		logger.error("Could not import ChangelogGenerator. Make sure the script is in the correct location.")
+	except ImportError as e:
+		logger.error(f"Could not import ChangelogGenerator: {e}")
 		sys.exit(1)
 
 	temp_dir, original_dir = setup_test_environment()
@@ -143,8 +144,12 @@ def run_test():
 				self.changelog_dir = "changelog"
 				self.client_subdir = "client"
 				self.internal_subdir = "internal"
-				self.commit_changes = False
+				self.should_commit_changes = False
 				self.commit_message_template = "Update changelog for PR #{pr_number}"
+
+				self.unified_changelog = False
+				self.unified_format = "client"  #NOTE: Options: "client" or "internal"
+
 				self.gh = None
 				self.repo = mock_repo
 
@@ -159,35 +164,37 @@ def run_test():
 
 		generator = TestChangelogGenerator()
 
-		changelog_dir = generator.setup_directories()
+		generator.run()
+
+		changelog_files = os.listdir(generator.changelog_dir)
+		logger.info(f"Files in changelog directory: {changelog_files}")
 
 		version = generator.extract_target_version(MOCK_PR_DESCRIPTION)
-		client_changes = generator.extract_changelog_section(MOCK_PR_DESCRIPTION, "Client-Facing Changes")
-		internal_changes = generator.extract_changelog_section(MOCK_PR_DESCRIPTION, "Internal Changes")
-		related_issues = generator.extract_related_issues(MOCK_PR_DESCRIPTION)
+		if generator.unified_changelog:
+			file_path = os.path.join(generator.changelog_dir, f"{version}.md")
+			if os.path.exists(file_path):
+				with open(file_path, "r") as f:
+					content = f.read()
+				logger.info(f"\nContent of unified changelog {file_path}:\n{'-' * 40}\n{content}\n{'-' * 40}")
+			else:
+				logger.error(f"Unified changelog file not found: {file_path}")
+		else:
+			client_file_path = os.path.join(generator.changelog_dir, generator.client_subdir, f"{version}.md")
+			internal_file_path = os.path.join(generator.changelog_dir, generator.internal_subdir, f"{version}.md")
 
-		updated_files = []
+			if os.path.exists(client_file_path):
+				with open(client_file_path, "r") as f:
+					content = f.read()
+				logger.info(f"\nContent of client changelog {client_file_path}:\n{'-' * 40}\n{content}\n{'-' * 40}")
+			else:
+				logger.error(f"Client changelog file not found: {client_file_path}")
 
-		if client_changes:
-			file_path = generator.update_changelog_file(
-				changelog_dir, version, "client", client_changes, generator.pr_number, MOCK_PR_TITLE, related_issues
-			)
-			updated_files.append(file_path)
-
-		if internal_changes:
-			file_path = generator.update_changelog_file(
-				changelog_dir, version, "internal", internal_changes, generator.pr_number, MOCK_PR_TITLE, related_issues
-			)
-			updated_files.append(file_path)
-
-		logger.info(f"Generated {len(updated_files)} changelog files:")
-		for file_path in updated_files:
-			logger.info(f"- {file_path}")
-
-			with open(file_path, "r") as f:
-				content = f.read()
-
-			logger.info(f"\nContent of {file_path}:\n{'-' * 40}\n{content}\n{'-' * 40}")
+			if os.path.exists(internal_file_path):
+				with open(internal_file_path, "r") as f:
+					content = f.read()
+				logger.info(f"\nContent of internal changelog {internal_file_path}:\n{'-' * 40}\n{content}\n{'-' * 40}")
+			else:
+				logger.error(f"Internal changelog file not found: {internal_file_path}")
 
 		logger.info("Test completed successfully!")
 
