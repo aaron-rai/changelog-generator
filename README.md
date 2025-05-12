@@ -1,4 +1,4 @@
-# PR Changelog Generator
+# Changelog Generator
 
 A GitHub Action that automatically generates organized changelogs from Pull Request descriptions.
 
@@ -13,6 +13,117 @@ A GitHub Action that automatically generates organized changelogs from Pull Requ
 - Associates changes with PR numbers and related issues
 - Categorizes changes (Added, Changed, Fixed, etc.)
 - Automatically commits generated changelog files
+
+## How It Works
+
+This action:
+
+1. Triggers when a PR is merged to your main branch
+2. Extracts changelog information from the PR description
+3. Organizes entries by version and change type
+4. Generates or updates markdown files in your changelog directory
+5. Optionally commits the changes back to your repository
+
+## Setup
+
+### Step 1: Create PR Template
+
+Create a PR template that includes the following structured sections:
+
+```markdown
+## Summary
+
+[Your PR summary here]
+
+---
+
+## Change Log
+
+### Client-Facing Changes
+
+<!-- Use plain, non-technical language for stakeholders or clients -->
+- **Added**: [New user-visible feature or enhancement]
+- **Changed**: [Updated behavior the client might notice]
+- **Removed**: [Removed features or functionality]
+- **Fixed**: [Bug fixes impacting users]
+
+### Internal Changes
+
+<!-- Use technical detail for devs or contributors -->
+- **Added**: [New modules, utilities, or functions]
+- **Changed**: [Refactors, optimizations, or internal behavior changes]
+- **Deprecated**: [Marked features/code for future removal]
+- **Removed**: [Deleted internal code or legacy features]
+- **Fixed**: [Internal bug or logic fix]
+- **Security**: [Patches to vulnerabilities or hardening measures]
+
+---
+
+## Target Version
+
+v1.0.0
+
+---
+
+## Related Issues
+
+<!-- Link related issues or tickets -->
+#123
+JIRA-456
+```
+
+> **Important:** The PR template **must** include the sections "Client-Facing Changes", "Internal Changes", and "Target Version" for the changelog generator to work properly.
+
+### Step 2: Add Workflow File
+
+Create a workflow file in your repository at `.github/workflows/generate-changelog.yml`:
+
+```yaml
+name: Generate Changelog
+
+permissions:
+  contents: write
+  pull-requests: read
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  generate-changelog:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      
+      # Use the changelog generator action
+      - name: Generate Changelog
+        uses: aaron-rai/changelog-generator@v1
+        with:
+          # Required parameters
+          token: ${{ secrets.GITHUB_TOKEN }}
+          pr_number: ${{ github.event.pull_request.number }}
+          repo: ${{ github.repository }}
+          
+          # Optional parameters with their default values
+          changelog_dir: "changelog"
+          client_subdirectory: "client"
+          internal_subdirectory: "internal"
+          unified_changelog: "false"
+          unified_format: "client"
+          single_file: "false"
+          single_filename: "CHANGELOG.md"
+          include_date_in_version: "true"
+          date_format: "%Y-%m-%d"
+          commit_changes: "true"
+          commit_message: "Update changelog for PR #{pr_number}"
+```
+
+- For more examples of this workflow in use, refer to the [examples.md](docs/examples.md).
 
 ## Configuration Options
 
@@ -56,48 +167,13 @@ When `single_file` is set to `true`, it creates one changelog file for all versi
 
 `${changelog_dir}/${single_filename}`
 
-## Example Workflow File
-
-```yaml
-name: Generate Changelog
-
-permissions:
-  contents: write
-  pull-requests: read
-
-on:
-  pull_request:
-    types: [closed]
-
-jobs:
-  generate-changelog:
-    if: github.event.pull_request.merged == true
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-      
-      # Use the changelog generator action
-      - name: Generate Changelog
-        uses: aaron-rai/changelog-generator@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          pr_number: ${{ github.event.pull_request.number }}
-          repo: ${{ github.repository }}
-          include_date_in_version: true
-          date_format: "%Y-%m-%d"
-```
-
 ## Example Output Formats
 
 ### Separate Changelogs (Default)
 
 **Client Changelog (`changelog/client/v1.2.0.md`):**
 ```markdown
-# v1.2.0 (2023-05-15) Client Changelog
+# v1.2.0 (2023-05-15)
 
 ## Added
 
@@ -171,3 +247,22 @@ jobs:
 - New dashboard widgets
 ...
 ```
+
+## Development
+
+### Local Testing
+
+To test this action locally:
+
+1. Clone this repository
+2. Install dependencies: `pip install -r requirements.txt`
+3. Set the required environment variables
+4. Run the test script: `python test_changelog.py`
+
+### Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

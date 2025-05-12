@@ -1,4 +1,4 @@
-name: 'PR Changelog Generator'
+name: 'Changelog Generator'
 description: 'Automatically generate changelogs from PR descriptions'
 author: 'Your Name'
 
@@ -26,6 +26,30 @@ inputs:
     description: 'Subdirectory for internal changelogs'
     required: false
     default: 'internal'
+  unified_changelog:
+    description: 'Use a single changelog instead of separate types'
+    required: false
+    default: 'false'
+  unified_format:
+    description: 'Format to use for unified changelog (client or internal)'
+    required: false
+    default: 'client'
+  single_file:
+    description: 'Use a single file for all versions'
+    required: false
+    default: 'false'
+  single_filename:
+    description: 'Filename to use for single file mode'
+    required: false
+    default: 'CHANGELOG.md'
+  include_date_in_version:
+    description: 'Include date in version headers'
+    required: false
+    default: 'true'
+  date_format:
+    description: 'Format for dates'
+    required: false
+    default: '%Y-%m-%d'
   commit_changes:
     description: 'Whether to commit changes to the repo'
     required: false
@@ -45,6 +69,12 @@ runs:
     CHANGELOG_DIR: ${{ inputs.changelog_dir }}
     CLIENT_SUBDIR: ${{ inputs.client_subdirectory }}
     INTERNAL_SUBDIR: ${{ inputs.internal_subdirectory }}
+    UNIFIED_CHANGELOG: ${{ inputs.unified_changelog }}
+    UNIFIED_FORMAT: ${{ inputs.unified_format }}
+    SINGLE_FILE: ${{ inputs.single_file }}
+    SINGLE_FILENAME: ${{ inputs.single_filename }}
+    INCLUDE_DATE_IN_VERSION: ${{ inputs.include_date_in_version }}
+    DATE_FORMAT: ${{ inputs.date_format }}
     COMMIT_CHANGES: ${{ inputs.commit_changes }}
     COMMIT_MESSAGE: ${{ inputs.commit_message }}
 

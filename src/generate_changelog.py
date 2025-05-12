@@ -195,7 +195,10 @@ class ChangelogGenerator:
 				elif self.unified_changelog:
 					f.write(f"# {version_with_date} Changelog\n\n")
 				else:
-					f.write(f"# {version_with_date} {section_type.capitalize()} Changelog\n\n")
+					if section_type == "client":
+						f.write(f"# {version_with_date}\n\n")
+					else:
+						f.write(f"# {version_with_date} Internal Changelog\n\n")
 			logger.info(f"Created new changelog file: {file_path}")
 
 		#NOTE: Read existing content
