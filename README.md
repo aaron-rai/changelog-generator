@@ -71,8 +71,8 @@ v1.0.0
 #123
 JIRA-456
 ```
-
-> **Important:** The PR template **must** include the sections "Client-Facing Changes", "Internal Changes", and "Target Version" for the changelog generator to work properly.
+> [!CAUTION]
+> The PR template **must** include the sections "Client-Facing Changes", "Internal Changes", and "Target Version" for the changelog generator to work properly.
 
 ### Step 2: Add Workflow File
 
