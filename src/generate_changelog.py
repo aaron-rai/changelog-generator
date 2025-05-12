@@ -25,6 +25,8 @@ class ChangelogGenerator:
 
 	def __init__(self):
 		"""Initialize with environment variables."""
+
+		#NOTE: Environment variables
 		self.github_token = os.environ.get("GITHUB_TOKEN")
 		self.repo_name = os.environ.get("REPO_NAME")
 		self.pr_number = os.environ.get("PR_NUMBER")
@@ -33,13 +35,26 @@ class ChangelogGenerator:
 		self.internal_subdir = os.environ.get("INTERNAL_SUBDIR", "internal")
 		self.should_commit_changes = os.environ.get("COMMIT_CHANGES", "true").lower() == "true"
 		self.commit_message_template = os.environ.get("COMMIT_MESSAGE", "Update changelog for PR #{pr_number}")
+
+		#NOTE: Unified changelog settings
 		self.unified_changelog = os.environ.get("UNIFIED_CHANGELOG", "false").lower() == "true"
 		self.unified_format = os.environ.get("UNIFIED_FORMAT", "client").lower()
+
+		#NOTE: Single file changelog settings
+		self.single_file = os.environ.get("SINGLE_FILE", "false").lower() == "true"
+		self.single_filename = os.environ.get("SINGLE_FILENAME", "CHANGELOG.md")
+
+		#NOTE: Version display settings
+		self.include_date_in_version = os.environ.get("INCLUDE_DATE_IN_VERSION", "true").lower() == "true"
+		self.date_format = os.environ.get("DATE_FORMAT", "%Y-%m-%d")
 
 		self._validate_env()
 
 		self.gh = Github(self.github_token)
 		self.repo = self.gh.get_repo(self.repo_name)
+
+		#NOTE: Current date for use throughout the class
+		self.today = datetime.now().strftime(self.date_format)
 
 	def _validate_env(self):
 		"""Validate that required environment variables are set."""
@@ -56,7 +71,7 @@ class ChangelogGenerator:
 		changelog_dir = Path(self.changelog_dir)
 		changelog_dir.mkdir(exist_ok=True)
 
-		if not self.unified_changelog:
+		if not self.unified_changelog and not self.single_file:
 			#NOTE: Create directories for different changelog types
 			(changelog_dir / self.client_subdir).mkdir(exist_ok=True)
 			(changelog_dir / self.internal_subdir).mkdir(exist_ok=True)
@@ -90,6 +105,12 @@ class ChangelogGenerator:
 		#NOTE Default to "notarget" if no version found
 		logger.warning("No target version found, using 'notarget'")
 		return "notarget"
+
+	def get_version_with_date(self, version):
+		"""Format the version with date if enabled."""
+		if self.include_date_in_version:
+			return f"{version} ({self.today})"
+		return version
 
 	def extract_changelog_section(self, description, section_name):
 		"""Extract a specific changelog section from PR description."""
@@ -151,27 +172,35 @@ class ChangelogGenerator:
 
 	def update_changelog_file(self, changelog_dir, version, section_type, changes, pr_number, pr_title, related_issues=None):
 		"""Update the appropriate changelog file with new changes."""
+		raw_version = version
+		version_with_date = self.get_version_with_date(version)
+
 		#NOTE: Determine file path based on type and version
-		if self.unified_changelog:
-			file_path = changelog_dir / f"{version}.md"
+		if self.single_file:
+			#NOTE: Use a single file for all changes
+			file_path = changelog_dir / self.single_filename
+		elif self.unified_changelog:
+			#NOTE: Use a unified file per version (use raw version for filename)
+			file_path = changelog_dir / f"{raw_version}.md"
 		else:
+			#NOTE Use separate files per version and type (use raw version for filename)
 			subdir = self.client_subdir if section_type == "client" else self.internal_subdir
-			file_path = changelog_dir / subdir / f"{version}.md"
+			file_path = changelog_dir / subdir / f"{raw_version}.md"
 
 		#NOTE: Create file with header if it doesn't exist
 		if not file_path.exists():
 			with open(file_path, "w") as f:
-				if self.unified_changelog:
-					f.write(f"# {version} Changelog\n\n")
+				if self.single_file:
+					f.write("# Changelog\n\n")
+				elif self.unified_changelog:
+					f.write(f"# {version_with_date} Changelog\n\n")
 				else:
-					f.write(f"# {version} {section_type.capitalize()} Changelog\n\n")
+					f.write(f"# {version_with_date} {section_type.capitalize()} Changelog\n\n")
 			logger.info(f"Created new changelog file: {file_path}")
 
 		#NOTE: Read existing content
 		with open(file_path, "r") as f:
 			content = f.read()
-
-		today = datetime.now().strftime("%Y-%m-%d")
 
 		changes_by_category = {}
 		for change in changes:
@@ -182,20 +211,30 @@ class ChangelogGenerator:
 
 		new_content = content.rstrip()
 
-		if section_type == "client":
-			date_header = f"## {today}"
-			if date_header not in content:
-				new_content += f"\n\n{date_header}\n"
-		else:
-			new_content += f"\n\n## PR #{pr_number}: {pr_title} ({today})\n"
+		if self.single_file:
+			version_header = f"## {version_with_date}"
+			version_pattern = f"## {re.escape(raw_version)}\\s*(?:\\([^)]+\\))?"
 
-		if related_issues:
+			if not re.search(version_pattern, content):
+				new_content += f"\n\n{version_header}\n"
+
+			if section_type == "client":
+				pass
+			else:
+				new_content += f"\n\n### PR #{pr_number}: {pr_title}\n"
+		elif section_type == "client":
+			pass
+		else:
+			new_content += f"\n\n## PR #{pr_number}: {pr_title}\n"
+
+		if (section_type != "client" or self.single_file) and related_issues:
 			new_content += "\n**Related Issues:** "
 			new_content += ", ".join(related_issues)
 			new_content += "\n"
 
 		for category, items in changes_by_category.items():
-			new_content += f"\n### {category}\n\n"
+			heading_prefix = "###" if self.single_file else "##"
+			new_content += f"\n{heading_prefix} {category}\n\n"
 			for item in items:
 				new_content += f"- {item}\n"
 
@@ -290,9 +329,9 @@ class ChangelogGenerator:
 		#NOTE: Track files that were updated
 		updated_files = []
 
-		if self.unified_changelog:
-			#NOTE: Unified changelog approach
-			logger.info("Using unified changelog format")
+		if self.unified_changelog or self.single_file:
+			#NOTE: Unified or single file changelog approach
+			logger.info(f"Using {'single file' if self.single_file else 'unified'} changelog format")
 
 			all_changes = []
 			if client_changes:
